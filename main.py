@@ -41,55 +41,6 @@ def get_connection():
 	return sqlite3.connect('database.sqlite')
 
 
-def to_btc_rub(amount_rub):
-	try:
-		response = requests.get(
-			f'https://blockchain.info/tobtc?currency=RUB&value={amount_rub}',
-			timeout=5,
-		)
-		response.raise_for_status()
-		return response.text
-	except Exception:
-		return 'N/A'
-
-
-def send_profile(chat_id):
-	with get_connection() as connection:
-		q = connection.cursor()
-		profile_row = q.execute(
-			'SELECT balans, data_reg, raiting, sdelka_colvo, sdelka_summa FROM ugc_users WHERE id = ?',
-			(chat_id,),
-		).fetchone()
-		if not profile_row:
-			bot.send_message(chat_id, 'Профиль не найден. Отправьте /start', parse_mode='HTML')
-			return
-
-		balance, data_reg, raiting, sdelka_colvo, sdelka_summa = profile_row
-		covlotziv = q.execute('SELECT COUNT(id) FROM otziv WHERE user = ?', (chat_id,)).fetchone()[0]
-
-	curse = to_btc_rub(balance)
-	urse = to_btc_rub(sdelka_summa)
-
-	keyboard = types.InlineKeyboardMarkup()
-	keyboard.add(types.InlineKeyboardButton(text='🔺Пополнить', callback_data='awhat_oplata'), types.InlineKeyboardButton(text='🔻Вывести', callback_data='awhat_wind'))
-	keyboard.add(types.InlineKeyboardButton(text='👥 Партнерская программа', callback_data='fereralka'))
-	keyboard.add(types.InlineKeyboardButton(text='🎁 Ваучеры', callback_data='vau'))
-
-	bot.send_message(chat_id, f'''
-🆔 Ваш ID: <code>{chat_id}</code>
-
-💰 Баланс: <code>{balance}</code> RUB | <code>{curse}</code> BTC
-
-📋 Количество сделок: <code>{sdelka_colvo}</code>
-
-💎 Сумма сделок: <code>{sdelka_summa}</code> RUB | <code>{urse}</code> BTC
-
-📊 Рейтинг: <code>{raiting}</code> | 📮 Отзывов: <code>{covlotziv}</code>
-
-🗓 Дата регистрации: {data_reg}
-''', parse_mode='HTML', reply_markup=keyboard)
-
-
 @bot.message_handler(content_types=['new_chat_members'])
 def greeting(message):
 	with get_connection() as connection:
@@ -181,32 +132,6 @@ def garant(message):
 		bot.reply_to(message, '✖️ Сумма должна быть числом')
 	except Exception:
 		bot.reply_to(message, '✖️ Ошибка создания сделки, попробуйте позже')
-
-
-@bot.message_handler(commands=['help'])
-def help_command(message):
-	if message.chat.type != 'private':
-		return
-	bot.send_message(
-		message.chat.id,
-		'''📌 Быстрые команды:
-
-/start — перезапустить бота и открыть меню
-/profile — открыть профиль
-/garant @username сумма — создать сделку
-/help — показать эту подсказку
-
-Также доступны кнопки в главном меню.''',
-		parse_mode='HTML',
-		reply_markup=keyboards.main,
-	)
-
-
-@bot.message_handler(commands=['profile'])
-def profile_command(message):
-	if message.chat.type != 'private':
-		return
-	send_profile(message.chat.id)
 
 
 @bot.message_handler(content_types=['text'])
