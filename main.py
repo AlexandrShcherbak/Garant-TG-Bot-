@@ -432,41 +432,7 @@ def send_text(message):
 
 
 			elif message.text.lower() == '💻 мой профиль':
-				connection = sqlite3.connect('database.sqlite')
-				q = connection.cursor()
-				q.execute("SELECT balans FROM ugc_users where id is " + str(message.chat.id))
-				balanss = q.fetchone()
-				q.execute("SELECT data_reg FROM ugc_users where id is " + str(message.chat.id))
-				data_reg = q.fetchone()
-				q.execute("SELECT raiting FROM ugc_users where id is " + str(message.chat.id))
-				raiting = q.fetchone()
-				q.execute("SELECT sdelka_colvo FROM ugc_users where id is " + str(message.chat.id))
-				sdelka_colvo = q.fetchone()
-				q.execute("SELECT sdelka_summa FROM ugc_users where id is " + str(message.chat.id))
-				sdelka_summa = q.fetchone()
-				balance = balanss[0]
-				curse = requests.get(f'https://blockchain.info/tobtc?currency=RUB&value={balance}').text
-				urse = requests.get(f'https://blockchain.info/tobtc?currency=RUB&value={sdelka_summa[0]}').text
-				covlotziv = q.execute(f'SELECT COUNT(id) FROM otziv  where user = {message.chat.id}').fetchone()[0]
-
-				keyboard = types.InlineKeyboardMarkup()
-				keyboard.add(types.InlineKeyboardButton(text='🔺Пополнить',callback_data=f'awhat_oplata'),types.InlineKeyboardButton(text='🔻Вывести',callback_data=f'awhat_wind'))
-				keyboard.add(types.InlineKeyboardButton(text='👥 Партнерская программа',callback_data='fereralka'))
-				keyboard.add(types.InlineKeyboardButton(text='🎁 Ваучеры',callback_data='vau'))
-
-				bot.send_message(message.chat.id, f'''
-🆔 Ваш ID: <code>{message.chat.id}</code>
-
-💰 Баланс: <code>{balance}</code> RUB | <code>{curse}</code> BTC
-
-📋 Количество сделок: <code>{sdelka_colvo[0]}</code>
-
-💎 Сумма сделок: <code>{sdelka_summa[0]}</code> RUB | <code>{urse}</code> BTC
-
-📊 Рейтинг: <code>{raiting[0]}</code> | 📮 Отзывов: <code>{covlotziv}</code>
-
-🗓 Дата регистрации: {data_reg[0]}
-''',parse_mode='HTML', reply_markup=keyboard)
+				send_profile(message.chat.id)
 				return
 
 
