@@ -1,8 +1,17 @@
-import telebot
-from telebot import types
+import os
 
-admin = 1353502819
+from dotenv import load_dotenv
 
-bot_name = "garant_international_bot"
+load_dotenv()
 
-bot_token='8386036128:AAEjfZxvrb06-076S8t_-LkUA7neDyYtUmE'
+
+def _require_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Environment variable {name} is required")
+    return value
+
+
+admin = int(_require_env("ADMIN_ID"))
+bot_name = _require_env("BOT_NAME")
+bot_token = _require_env("BOT_TOKEN")

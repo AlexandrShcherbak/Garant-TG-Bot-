@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 from decimal import *
-import telebot
 import datetime
-from telebot import types, apihelper
-import sqlite3
-import config
-import random
-import time
-import os,random,shutil,subprocess
 import json
+import os
+import random
+import shutil
+import sqlite3
+import subprocess
+import time
+
+import telebot
+from telebot import apihelper, types
+
+import config
 # from Light_Qiwi import Qiwi, OperationType
 import keyboards
 import requests
@@ -18,120 +22,213 @@ from datetime import datetime, timedelta
 bot = telebot.TeleBot(config.bot_token)
 global users_id_otziv
 
+WELCOME_TEXT = '''💌 Добро пожаловать, <a href="tg://user?id={user_id}">{first_name}</a>
+
+❇️❗️🌐 Вас приветствует лучший бот-автогарант в телеграм, наблюдая за ботом SAVE CLICK, вы увидите еще много новвоведений, нацеленных на развитие бота и его дальнейшего функционала.
+
+🤖Моя цель - создать комфортную безопасную торговую среду для каждого пользователя.
+
+💟Мы будем рады выслушать ваши пожелания по боту. Вопросы и предложения по улучшению SAVE CLICK вы так же можете задать:
+@alexandrshcherbak
+
+✨Следите за нами, вас ждет еще много нового!
+
+💙Спасибо что остаетесь с нами.
+💵Удачи в сделках!'''
+
+
+def get_connection():
+	return sqlite3.connect('database.sqlite')
+
+
+def to_btc_rub(amount_rub):
+	try:
+		response = requests.get(
+			f'https://blockchain.info/tobtc?currency=RUB&value={amount_rub}',
+			timeout=5,
+		)
+		response.raise_for_status()
+		return response.text
+	except Exception:
+		return 'N/A'
+
+
+def send_profile(chat_id):
+	with get_connection() as connection:
+		q = connection.cursor()
+		profile_row = q.execute(
+			'SELECT balans, data_reg, raiting, sdelka_colvo, sdelka_summa FROM ugc_users WHERE id = ?',
+			(chat_id,),
+		).fetchone()
+		if not profile_row:
+			bot.send_message(chat_id, 'Профиль не найден. Отправьте /start', parse_mode='HTML')
+			return
+
+		balance, data_reg, raiting, sdelka_colvo, sdelka_summa = profile_row
+		covlotziv = q.execute('SELECT COUNT(id) FROM otziv WHERE user = ?', (chat_id,)).fetchone()[0]
+
+	curse = to_btc_rub(balance)
+	urse = to_btc_rub(sdelka_summa)
+
+	keyboard = types.InlineKeyboardMarkup()
+	keyboard.add(types.InlineKeyboardButton(text='🔺Пополнить', callback_data='awhat_oplata'), types.InlineKeyboardButton(text='🔻Вывести', callback_data='awhat_wind'))
+	keyboard.add(types.InlineKeyboardButton(text='👥 Партнерская программа', callback_data='fereralka'))
+	keyboard.add(types.InlineKeyboardButton(text='🎁 Ваучеры', callback_data='vau'))
+
+	bot.send_message(chat_id, f'''
+🆔 Ваш ID: <code>{chat_id}</code>
+
+💰 Баланс: <code>{balance}</code> RUB | <code>{curse}</code> BTC
+
+📋 Количество сделок: <code>{sdelka_colvo}</code>
+
+💎 Сумма сделок: <code>{sdelka_summa}</code> RUB | <code>{urse}</code> BTC
+
+📊 Рейтинг: <code>{raiting}</code> | 📮 Отзывов: <code>{covlotziv}</code>
+
+🗓 Дата регистрации: {data_reg}
+''', parse_mode='HTML', reply_markup=keyboard)
+
+
 @bot.message_handler(content_types=['new_chat_members'])
 def greeting(message):
-	connection = sqlite3.connect('database.sqlite')
-	q = connection.cursor()
-	q = q.execute('SELECT * FROM chat_garant WHERE chat_id IS '+str(message.chat.id))
-	row = q.fetchone()
+	with get_connection() as connection:
+		q = connection.cursor()
+		row = q.execute('SELECT 1 FROM chat_garant WHERE chat_id = ?', (message.chat.id,)).fetchone()
 	if row is None:
-		bot.send_message(message.chat.id, f'''id чата: <code>{message.chat.id}</code>''' ,parse_mode='HTML')
+		bot.send_message(message.chat.id, f'''id чата: <code>{message.chat.id}</code>''', parse_mode='HTML')
+
 
 @bot.message_handler(commands=['start'])
 def start_message(message):
-	if message.chat.type == 'private':
-		userid = str(message.chat.id)
-		print(message.text)
-		username = str(message.from_user.username)
-		connection = sqlite3.connect('database.sqlite')
+	if message.chat.type != 'private':
+		return
+
+	user_id = message.chat.id
+	username = (message.from_user.username or '').lower()
+	now_date = str(datetime.now())[:10]
+
+	with get_connection() as connection:
 		q = connection.cursor()
-		q = q.execute('SELECT * FROM ugc_users WHERE id IS '+str(userid))
-		row = q.fetchone()
+		row = q.execute('SELECT 1 FROM ugc_users WHERE id = ?', (user_id,)).fetchone()
 		if row is None:
-			now = datetime.now()
-			now_date = str(str(now)[:10])
-			q.execute("INSERT INTO ugc_users (id,name,data_reg) VALUES ('%s', '%s', '%s')"%(userid,username,now_date))
-			connection.commit()
-			bot.send_message(message.chat.id,f'''💌 Добро пожаловать, @| <a href="tg://user?id={message.chat.id}">{message.chat.first_name}</a>
+			q.execute(
+				'INSERT INTO ugc_users (id, name, data_reg) VALUES (?, ?, ?)',
+				(user_id, username, now_date),
+			)
+			parts = message.text.split(maxsplit=1)
+			start_arg = parts[1] if len(parts) > 1 else ''
+			if start_arg.isdigit() and int(start_arg) != user_id:
+				q.execute('UPDATE ugc_users SET ref = ? WHERE id = ?', (int(start_arg), user_id))
+				q.execute('UPDATE ugc_users SET ref_colvo = ref_colvo + 1 WHERE id = ?', (int(start_arg),))
+				try:
+					bot.send_message(
+						int(start_arg),
+						f'Новый реферал! <a href="tg://user?id={user_id}">{message.chat.first_name}</a>',
+						parse_mode='HTML',
+						reply_markup=keyboards.main,
+					)
+				except Exception:
+					pass
 
-❇️❗️🌐 Вас приветствует лучший бот-автогарант в телеграм, наблюдая за ботом SAVE CLICK, вы увидите еще много новвоведений, нацеленных на развитие бота и его дальнейшего функционала. 
+	bot.send_message(
+		message.chat.id,
+		WELCOME_TEXT.format(user_id=message.chat.id, first_name=message.chat.first_name),
+		parse_mode='HTML',
+		disable_web_page_preview=True,
+		reply_markup=keyboards.main,
+	)
 
-🤖Моя цель - создать комфортную безопасную торговую среду для каждого пользователя.
-
-💟Мы будем рады выслушать ваши пожелания по боту. Вопросы и предложения по улучшению SAVE CLICK вы так же можете задать:
-@alexandrshcherbak
-
-✨Следите за нами, вас ждет еще много нового!
-
-💙Спасибо что остаетесь с нами.
-💵Удачи в сделках!''',parse_mode='HTML',disable_web_page_preview = True, reply_markup=keyboards.main)
-			if message.text[7:] != '':
-				if message.text[7:] != message.chat.id:
-					q.execute("update ugc_users set ref = " + str(message.text[7:])+ " where id = " + str(message.chat.id))
-					connection.commit()
-					q.execute("update ugc_users set ref_colvo =ref_colvo + 1 where id = " + str(message.text[7:]))
-					connection.commit()
-					bot.send_message(message.text[7:], f'Новый реферал! <a href="tg://user?id={message.chat.id}">{message.chat.first_name}</a>',parse_mode='HTML', reply_markup=keyboards.main)
-		else:
-			bot.send_message(message.chat.id, f'''💌 Добро пожаловать, <a href="tg://user?id={message.chat.id}">{message.chat.first_name}</a>
-
-❇️❗️🌐 Вас приветствует лучший бот-автогарант в телеграм, наблюдая за ботом SAVE CLICK, вы увидите еще много новвоведений, нацеленных на развитие бота и его дальнейшего функционала. 
-
-🤖Моя цель - создать комфортную безопасную торговую среду для каждого пользователя.
-
-💟Мы будем рады выслушать ваши пожелания по боту. Вопросы и предложения по улучшению SAVE CLICK вы так же можете задать:
-@alexandrshcherbak
-
-✨Следите за нами, вас ждет еще много нового!
-
-💙Спасибо что остаетесь с нами.
-💵Удачи в сделках!''',parse_mode='HTML',disable_web_page_preview = True, reply_markup=keyboards.main)
 
 @bot.message_handler(commands=['garant'])
 def garant(message):
 	try:
-		connection = sqlite3.connect('database.sqlite')
-		q = connection.cursor()
-		q.execute("SELECT balans FROM ugc_users where id is " + str(message.from_user.id))
-		balanss = q.fetchone()
-		if int(balanss[0]) >= int(message.text[8:].split(' ')[1]):
-			q.execute("update ugc_users set balans = balans - "+str(message.text[8:].split(' ')[1])+" where id = " + str(message.from_user.id))
-			connection.commit()
-			foo = message.text[8:].split(' ')[0].upper() 
-			foo = foo.replace("@", "")
-			id_id = q.execute(f"SELECT id FROM ugc_users where name = '{foo.lower()}'").fetchone()[0]
-			now = datetime.now()
-			now_date = str(str(now)[:10])
-			q.execute("INSERT INTO sdelki (user_create,user_invite,data,summa) VALUES ('%s', '%s', '%s', '%s')"%(message.from_user.id,id_id,now_date,message.text[8:].split(' ')[1]))
-			connection.commit()
-			user = message.text[8:].split(' ')[0]
-			money = message.text[8:].split(' ')[1]
-			q.execute(f"SELECT seq FROM sqlite_sequence where name = 'sdelki'")
-			id_sdelka = q.fetchone()[0]
-			bot.send_message(message.chat.id, f'''🔰  {user} у тебя новая сделка от @{message.from_user.username} на сумму {money} RUB, перейдите в @SAVEGARANT_bot -> 🤝 Мои сделки''',parse_mode='HTML')
-			bot.send_message(message.chat.id, f'''🔰 Сделка #G{id_sdelka} от @{message.from_user.username} для @{user}
+		parts = message.text.split()
+		if len(parts) < 3:
+			bot.reply_to(message, '✖️ Формат: /garant @username сумма')
+			return
+
+		user = parts[1]
+		money = int(parts[2])
+		target_username = user.replace('@', '').lower()
+
+		with get_connection() as connection:
+			q = connection.cursor()
+			balanss = q.execute('SELECT balans FROM ugc_users WHERE id = ?', (message.from_user.id,)).fetchone()
+			if not balanss or int(balanss[0]) < money:
+				bot.reply_to(message, '✖️ Недостаточно средств, перейдите в в @SAVEGARANT_bot -> 💻 Мой профиль')
+				return
+
+			invite_row = q.execute('SELECT id FROM ugc_users WHERE name = ?', (target_username,)).fetchone()
+			if invite_row is None:
+				bot.reply_to(message, '✖️ Пользователя нет в базе, попросите отправить любое сообщение в чат')
+				return
+
+			q.execute('UPDATE ugc_users SET balans = balans - ? WHERE id = ?', (money, message.from_user.id))
+			now_date = str(datetime.now())[:10]
+			q.execute(
+				'INSERT INTO sdelki (user_create, user_invite, data, summa) VALUES (?, ?, ?, ?)',
+				(message.from_user.id, invite_row[0], now_date, money),
+			)
+			id_sdelka = q.execute("SELECT seq FROM sqlite_sequence WHERE name = 'sdelki'").fetchone()[0]
+
+		bot.send_message(message.chat.id, f'''🔰  {user} у тебя новая сделка от @{message.from_user.username} на сумму {money} RUB, перейдите в @SAVEGARANT_bot -> 🤝 Мои сделки''', parse_mode='HTML')
+		bot.send_message(message.chat.id, f'''🔰 Сделка #G{id_sdelka} от @{message.from_user.username} для @{user}
 
 💰 Сумма сделки: {money} RUB''')
-		else:
-			bot.reply_to(message, '✖️ Недостаточно средств, перейдите в в @SAVEGARANT_bot -> 💻 Мой профиль')
 
-	except:	
-		bot.reply_to(message, '✖️ Пользователя нет в базе, попросите отправить любое сообщение в чат')
+	except ValueError:
+		bot.reply_to(message, '✖️ Сумма должна быть числом')
+	except Exception:
+		bot.reply_to(message, '✖️ Ошибка создания сделки, попробуйте позже')
+
+
+@bot.message_handler(commands=['help'])
+def help_command(message):
+	if message.chat.type != 'private':
+		return
+	bot.send_message(
+		message.chat.id,
+		'''📌 Быстрые команды:
+
+/start — перезапустить бота и открыть меню
+/profile — открыть профиль
+/garant @username сумма — создать сделку
+/help — показать эту подсказку
+
+Также доступны кнопки в главном меню.''',
+		parse_mode='HTML',
+		reply_markup=keyboards.main,
+	)
+
+
+@bot.message_handler(commands=['profile'])
+def profile_command(message):
+	if message.chat.type != 'private':
+		return
+	send_profile(message.chat.id)
 
 
 @bot.message_handler(content_types=['text'])
 def send_text(message):
-	connection = sqlite3.connect('database.sqlite')
-	q = connection.cursor()
-	q = q.execute('SELECT * FROM ugc_users WHERE id IS '+str(message.from_user.id))
-	row = q.fetchone()
-	if row is None:
-		now = datetime.now()
-		now_date = str(str(now)[:10])
-		q.execute("INSERT INTO ugc_users (id,name,data_reg,chat_user) VALUES ('%s', '%s', '%s', '%s')"%(message.from_user.id,message.from_user.username.lower(),now_date,message.chat.id))
-		connection.commit()
-	connection = sqlite3.connect('database.sqlite')
-	q = connection.cursor()
-	username = str(message.from_user.username.lower())
-	q.execute(f"SELECT name FROM ugc_users where id = '{message.from_user.id}'")
-	name = q.fetchone()
-	if str(name[0]) == str(username):
-		pass
-	else:
-		bot.reply_to(message, 'Ваш юзернейм обновлен')
-		q.execute(f"update ugc_users set name = '{username}' where id = '{message.from_user.id}'")
-		connection.commit()
+	with get_connection() as connection:
+		q = connection.cursor()
+		row = q.execute('SELECT 1 FROM ugc_users WHERE id = ?', (message.from_user.id,)).fetchone()
+		if row is None:
+			now_date = str(datetime.now())[:10]
+			username = (message.from_user.username or '').lower()
+			q.execute(
+				'INSERT INTO ugc_users (id,name,data_reg,chat_user) VALUES (?, ?, ?, ?)',
+				(message.from_user.id, username, now_date, message.chat.id),
+			)
 
+	with get_connection() as connection:
+		q = connection.cursor()
+		username = (message.from_user.username or '').lower()
+		name = q.execute('SELECT name FROM ugc_users WHERE id = ?', (message.from_user.id,)).fetchone()
+		if name and str(name[0]) != str(username):
+			bot.reply_to(message, 'Ваш юзернейм обновлен')
+			q.execute('UPDATE ugc_users SET name = ? WHERE id = ?', (username, message.from_user.id))
 	if message.chat.type == 'private':
 		connection = sqlite3.connect('database.sqlite')
 		q = connection.cursor()
@@ -410,41 +507,7 @@ def send_text(message):
 
 
 			elif message.text.lower() == '💻 мой профиль':
-				connection = sqlite3.connect('database.sqlite')
-				q = connection.cursor()
-				q.execute("SELECT balans FROM ugc_users where id is " + str(message.chat.id))
-				balanss = q.fetchone()
-				q.execute("SELECT data_reg FROM ugc_users where id is " + str(message.chat.id))
-				data_reg = q.fetchone()
-				q.execute("SELECT raiting FROM ugc_users where id is " + str(message.chat.id))
-				raiting = q.fetchone()
-				q.execute("SELECT sdelka_colvo FROM ugc_users where id is " + str(message.chat.id))
-				sdelka_colvo = q.fetchone()
-				q.execute("SELECT sdelka_summa FROM ugc_users where id is " + str(message.chat.id))
-				sdelka_summa = q.fetchone()
-				balance = balanss[0]
-				curse = requests.get(f'https://blockchain.info/tobtc?currency=RUB&value={balance}').text
-				urse = requests.get(f'https://blockchain.info/tobtc?currency=RUB&value={sdelka_summa[0]}').text
-				covlotziv = q.execute(f'SELECT COUNT(id) FROM otziv  where user = {message.chat.id}').fetchone()[0]
-
-				keyboard = types.InlineKeyboardMarkup()
-				keyboard.add(types.InlineKeyboardButton(text='🔺Пополнить',callback_data=f'awhat_oplata'),types.InlineKeyboardButton(text='🔻Вывести',callback_data=f'awhat_wind'))
-				keyboard.add(types.InlineKeyboardButton(text='👥 Партнерская программа',callback_data='fereralka'))
-				keyboard.add(types.InlineKeyboardButton(text='🎁 Ваучеры',callback_data='vau'))
-
-				bot.send_message(message.chat.id, f'''
-🆔 Ваш ID: <code>{message.chat.id}</code>
-
-💰 Баланс: <code>{balance}</code> RUB | <code>{curse}</code> BTC
-
-📋 Количество сделок: <code>{sdelka_colvo[0]}</code>
-
-💎 Сумма сделок: <code>{sdelka_summa[0]}</code> RUB | <code>{urse}</code> BTC
-
-📊 Рейтинг: <code>{raiting[0]}</code> | 📮 Отзывов: <code>{covlotziv}</code>
-
-🗓 Дата регистрации: {data_reg[0]}
-''',parse_mode='HTML', reply_markup=keyboard)
+				send_profile(message.chat.id)
 				return
 
 
